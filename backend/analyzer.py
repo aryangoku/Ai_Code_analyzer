@@ -1,62 +1,101 @@
+import git
+import uuid
 import os
-import re
+import subprocess
 from radon.complexity import cc_visit
+from github_data import get_repo_data
 
-def analyze_code(repo_path):
 
-    total_lines = 0
-    file_count = 0
-    largest_file = ""
-    max_lines = 0
-    complexity_total = 0
-    functions = 0
+def calculate_risk(complexity, issues, large_files):
 
-    js_function_pattern = r'function\s+\w+\(|\w+\s*=\s*\(?.*\)?\s*=>'
+    risk = 0
 
-    for root, dirs, files in os.walk(repo_path):
+    if complexity > 15:
+        risk += 30
+    elif complexity > 10:
+        risk += 15
 
-        for file in files:
+    if issues > 200:
+        risk += 25
 
-            if file.endswith((".py",".js",".ts")):
+    if large_files > 5:
+        risk += 20
 
-                file_path = os.path.join(root,file)
+    return min(risk,100)
 
-                try:
 
-                    with open(file_path,"r",errors="ignore") as f:
+def generate_ai_advice(score, complexity):
 
-                        code = f.read()
+    if score > 80:
+        return "Repository structure is healthy with manageable complexity."
 
-                        lines = code.count("\n")
+    if complexity > 15:
+        return "High complexity detected. Consider breaking large functions."
 
-                        total_lines += lines
-                        file_count += 1
+    return "Moderate code health. Refactoring and better test coverage recommended."
 
-                        if lines > max_lines:
-                            max_lines = lines
-                            largest_file = file
 
-                        if file.endswith(".py"):
-                            blocks = cc_visit(code)
-                            complexity_total += sum(b.complexity for b in blocks)
-                            functions += len(blocks)
+def analyze_repo(repo_url):
 
-                        if file.endswith(".js") or file.endswith(".ts"):
-                            matches = re.findall(js_function_pattern, code)
-                            functions += len(matches)
+    folder = f"repo_{uuid.uuid4().hex}"
 
-                except:
-                    continue
+    git.Repo.clone_from(repo_url, folder)
 
-    avg_complexity = 0
+    python_files = []
 
-    if functions > 0:
-        avg_complexity = complexity_total / functions
+    for root,dirs,files in os.walk(folder):
+        for f in files:
+            if f.endswith(".py"):
+                python_files.append(os.path.join(root,f))
+
+    complexities=[]
+
+    for file in python_files:
+
+        with open(file,"r",errors="ignore") as f:
+            code=f.read()
+
+        results=cc_visit(code)
+
+        for r in results:
+            complexities.append(r.complexity)
+
+    avg_complexity = sum(complexities)/len(complexities) if complexities else 0
+
+    total_files=len(python_files)
+
+    large_files=sum(
+        1 for f in python_files if os.path.getsize(f)>50000
+    )
+
+    security = subprocess.getoutput(f"python -m bandit -r {folder}")
+
+    github = get_repo_data(repo_url)
+
+    score=max(0,100-avg_complexity*3)
+
+    risk=calculate_risk(avg_complexity, github["issues"], large_files)
+
+    advice=generate_ai_advice(score, avg_complexity)
 
     return {
-        "total_lines": total_lines,
-        "file_count": file_count,
-        "largest_file": largest_file,
-        "avg_complexity": round(avg_complexity,2),
-        "functions": functions
+
+        "health_score":round(score,2),
+
+        "complexity":round(avg_complexity,2),
+
+        "stars":github["stars"],
+        "forks":github["forks"],
+        "language":github["language"],
+        "issues":github["issues"],
+
+        "total_files":total_files,
+        "large_files":large_files,
+
+        "risk_score":risk,
+
+        "ai_recommendation":advice,
+
+        "security_report":security[:800]
+
     }
