@@ -6,9 +6,9 @@ const data=[{value:score}]
 
 return(
 
-<div className="bg-slate-800 p-6 rounded-xl text-center">
+<div className="dashboard-card text-center">
 
-<h2 className="mb-4 text-lg">Health Score</h2>
+<h2 className="card-title mb-4">Health Score</h2>
 
 <RadialBarChart
 width={250}

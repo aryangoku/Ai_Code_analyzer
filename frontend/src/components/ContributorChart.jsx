@@ -12,11 +12,9 @@ const data=[
 
 return(
 
-<div className="bg-slate-800 p-6 rounded-xl">
+<div className="dashboard-card">
 
-<h2 className="mb-4 text-lg">
-Repository Activity
-</h2>
+<h2 className="card-title mb-4">Repository Activity</h2>
 
 <BarChart width={250} height={200} data={data}>
 
