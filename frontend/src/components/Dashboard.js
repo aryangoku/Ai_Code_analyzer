@@ -1,11 +1,13 @@
 import ScoreGauge from "./ScoreGauge"
 import RiskCards from "./RiskCards"
 import ContributorChart from "./ContributorChart"
+import LanguageChart from "./LanguageChart"
 import CommitHeatmap from "./CommitHeatmap"
 import ContributorGraph from "./ContributorGraph"
 import EngineeringHealthScore from "./EngineeringHealthScore"
 import DependencyGraph from "./DependencyGraph"
-import AIArchitecturePanel from "./AIArchitecturePanel"
+import HotspotTable from "./HotspotTable"
+import QualityChecklist from "./QualityChecklist"
 
 function Dashboard({ data }) {
   return (
@@ -16,18 +18,28 @@ function Dashboard({ data }) {
         <ContributorChart stars={data.stars} forks={data.forks} issues={data.issues} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {data.repo_summary && (
+        <div className="dashboard-card">
+          <h2 className="card-title mb-3">Repository summary</h2>
+          <p className="text-sm text-slate-300">{data.repo_summary}</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <CommitHeatmap commitActivity={data.commit_activity} />
         <ContributorGraph contributors={data.contributors} />
+        <LanguageChart languages={data.languages} />
       </div>
 
       {data.engineering_health && (
         <EngineeringHealthScore engineeringHealth={data.engineering_health} />
       )}
 
+      {data.quality && <QualityChecklist quality={data.quality} />}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <DependencyGraph dependencyGraph={data.dependency_graph} />
-        <AIArchitecturePanel aiArchitectureReview={data.ai_architecture_review} />
+        <HotspotTable hotspots={data.hotspots} />
       </div>
     </div>
   )

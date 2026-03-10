@@ -1,10 +1,11 @@
 import git
 import uuid
 import os
+import re
 import shutil
 import subprocess
 from radon.complexity import cc_visit
-from github_data import get_repo_data, get_commit_activity, get_contributors
+from github_data import get_repo_data, get_commit_activity, get_contributors, get_languages
 from dependency_graph import build_graph as build_dep_graph
 
 
@@ -34,22 +35,21 @@ def generate_ai_advice(score, complexity, repo_name="", language="Python", total
     return f"Moderate code health for {name}. Refactoring complex modules and adding tests will improve maintainability."
 
 
-def _get_code_sample(python_files, max_chars=4000):
-    """Build a small code sample for AI review from first few files."""
-    sample = []
-    total = 0
-    for path in python_files[:5]:
-        if total >= max_chars:
-            break
-        try:
-            with open(path, "r", errors="ignore") as f:
-                content = f.read()
-            chunk = content[: max_chars - total]
-            sample.append(f"# {path}\n{chunk}")
-            total += len(chunk)
-        except Exception:
-            continue
-    return "\n\n".join(sample) if sample else ""
+def _clean_summary_text(text: str) -> str:
+    """Best-effort cleanup of README snippet: drop HTML tags and markdown noise."""
+    if not text:
+        return ""
+    # Remove HTML tags like <p>, <img>, etc.
+    text = re.sub(r"<[^>]+>", " ", text)
+    # Remove markdown image syntax: ![alt](url)
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", text)
+    # Replace markdown links [text](url) with just 'text'
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", lambda m: m.group(1), text)
+    # Strip leading markdown headings/bullets
+    text = re.sub(r"^[#>*\s]+\s*", "", text)
+    # Collapse whitespace
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 def analyze_repo(repo_url):
@@ -60,11 +60,31 @@ def analyze_repo(repo_url):
         raise ValueError(f"Failed to clone repository: {e}") from e
 
     try:
-        python_files = []
+        python_files: list[str] = []
+        code_exts = (
+            ".py",
+            ".js",
+            ".jsx",
+            ".ts",
+            ".tsx",
+            ".go",
+            ".java",
+            ".rb",
+            ".php",
+            ".cs",
+            ".cpp",
+            ".c",
+            ".rs",
+            ".kt",
+            ".swift",
+        )
+
         for root, dirs, files in os.walk(folder):
             for f in files:
-                if f.endswith(".py"):
-                    python_files.append(os.path.join(root, f))
+                path = os.path.join(root, f)
+                lower = f.lower()
+                if lower.endswith(".py"):
+                    python_files.append(path)
 
         complexities = []
         for file in python_files:
@@ -93,14 +113,11 @@ def analyze_repo(repo_url):
         language = github.get("language") or "Python"
         advice = generate_ai_advice(score, avg_complexity, repo_name, language, total_files)
 
-        # Commit heatmap + contributors (real GitHub data)
         commit_activity = get_commit_activity(repo_url)
         contributors = get_contributors(repo_url)
-
-        # Dependency graph from cloned repo
+        languages_raw = get_languages(repo_url)
         dep_graph = build_dep_graph(folder)
 
-        # Engineering health breakdown (0–100 per dimension)
         activity_score = min(100, (github["stars"] or 0) // 2 + (github["forks"] or 0) * 5 + 20)
         security_issues = "High" in (security or "") or "Medium" in (security or "")
         security_score = 20 if security_issues else 100
@@ -112,22 +129,111 @@ def analyze_repo(repo_url):
             "activity_score": activity_score,
         }
 
-        # Full AI architecture review + unique recommendation (repo-specific)
-        code_sample = _get_code_sample(python_files)
-        ai_architecture_review = None
-        if os.getenv("OPENAI_API_KEY"):
+        # Try to read README for a short, non-AI summary
+        readme_text = ""
+        for name in ("README.md", "Readme.md", "readme.md", "README.MD"):
+            candidate = os.path.join(folder, name)
+            if os.path.isfile(candidate):
+                try:
+                    with open(candidate, "r", errors="ignore") as f:
+                        readme_text = f.read()
+                except Exception:
+                    readme_text = ""
+                break
+
+        # Simple repo summary from README (no AI) – prefer a real sentence over just the title
+        repo_summary = None
+        if readme_text:
+            lines = [ln.strip() for ln in readme_text.splitlines()]
+            paragraphs: list[list[str]] = []
+            current: list[str] = []
+            for ln in lines:
+                if ln and not ln.lower().startswith("<img"):
+                    current.append(ln)
+                elif current:
+                    paragraphs.append(current)
+                    current = []
+            if current:
+                paragraphs.append(current)
+
+            # Find the first paragraph that looks like a real description (not just the title)
+            chosen = None
+            for idx, para in enumerate(paragraphs):
+                raw = " ".join(para)
+                cleaned = _clean_summary_text(raw)
+                if idx == 0 and len(cleaned.split()) <= 3:
+                    # Very short first line (likely just project name) – skip it
+                    continue
+                if len(cleaned) >= 40 or any(ch in cleaned for ch in (".", ":", "–", "- ")):
+                    chosen = cleaned
+                    break
+
+            if not chosen and paragraphs:
+                chosen = _clean_summary_text(" ".join(paragraphs[0]))
+
+            if chosen:
+                repo_summary = chosen[:320]
+
+        # Complexity hotspots: top Python files by average cyclomatic complexity and size
+        hotspots = []
+        for path in python_files:
             try:
-                from ai_review import architecture_review, generate_recommendation
-                if code_sample:
-                    ai_architecture_review = architecture_review(
-                        code_sample, repo_name=repo_name, language=language
-                    )
-                    advice = generate_recommendation(
-                        code_sample, repo_name, language,
-                        score, avg_complexity, total_files, risk,
-                    )
+                with open(path, "r", errors="ignore") as f:
+                    code = f.read()
+                loc = len(code.splitlines())
+                results = cc_visit(code)
+                if not results:
+                    continue
+                avg_file_complexity = sum(r.complexity for r in results) / len(results)
+                score_hotspot = avg_file_complexity * (1 + loc / 200.0)
+                rel_path = os.path.relpath(path, folder).replace("\\", "/")
+                hotspots.append(
+                    {
+                        "path": rel_path,
+                        "loc": loc,
+                        "avg_complexity": round(avg_file_complexity, 2),
+                        "functions": len(results),
+                        "score": round(score_hotspot, 2),
+                    }
+                )
             except Exception:
-                pass
+                continue
+
+        hotspots.sort(key=lambda h: h["score"], reverse=True)
+        hotspots = hotspots[:10]
+
+        # Repository quality checklist signals
+        license_found = False
+        ci_found = False
+        tests_found = False
+
+        for root, dirs, files in os.walk(folder):
+            lower_files = [f.lower() for f in files]
+            if any(fn in lower_files for fn in ("license", "license.md", "license.txt", "copying")):
+                license_found = True
+            if ".github" in dirs:
+                workflows = os.path.join(root, ".github", "workflows")
+                if os.path.isdir(workflows) and any(
+                    name.endswith((".yml", ".yaml")) for name in os.listdir(workflows)
+                ):
+                    ci_found = True
+            if any(d in ("tests", "test") for d in dirs):
+                tests_found = True
+
+        recent_active = False
+        if commit_activity:
+            for week in commit_activity[-12:]:
+                if week.get("total", 0) > 0:
+                    recent_active = True
+                    break
+
+        quality = {
+            "readme": bool(readme_text),
+            "license": license_found,
+            "ci": ci_found,
+            "tests": tests_found,
+            "recent_activity": recent_active,
+        }
 
         return {
             "repo_name": repo_name,
@@ -145,10 +251,14 @@ def analyze_repo(repo_url):
             "security_report": (security or "")[:1200],
             "commit_activity": commit_activity,
             "contributors": contributors,
+            "languages": languages_raw,
             "dependency_graph": dep_graph,
             "engineering_health": engineering_health,
-            "ai_architecture_review": ai_architecture_review,
+            "hotspots": hotspots,
+            "repo_summary": repo_summary,
+            "quality": quality,
         }
+
     finally:
         if os.path.isdir(folder):
             try:

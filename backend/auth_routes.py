@@ -51,7 +51,6 @@ def login():
     if not GITHUB_CLIENT_ID:
         raise HTTPException(status_code=503, detail="GitHub OAuth not configured (missing GITHUB_CLIENT_ID)")
     redirect_uri = _get_redirect_uri()
-    # GitHub requires redirect_uri to be exactly what's registered; encode for query string
     encoded_uri = quote(redirect_uri, safe="")
     url = (
         "https://github.com/login/oauth/authorize"

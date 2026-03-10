@@ -80,3 +80,19 @@ def get_contributors(repo_url, per_page=30):
         ]
     except Exception:
         return []
+
+
+def get_languages(repo_url):
+    """Return raw language breakdown from GitHub (bytes per language)."""
+    try:
+        owner, repo = _owner_repo(repo_url)
+        if not owner or not repo:
+            return {}
+        url = f"https://api.github.com/repos/{owner}/{repo}/languages"
+        r = requests.get(url, headers=_headers(), timeout=10)
+        if r.status_code != 200:
+            return {}
+        data = r.json()
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
