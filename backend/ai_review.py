@@ -5,8 +5,9 @@ logger = logging.getLogger(__name__)
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 # llama-3.3-70b-versatile was retired by Groq on 2026-08-16 for free/developer tiers.
-# Override with GROQ_MODEL if needed: https://console.groq.com/docs/models
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+# Default stays on Groq-hosted Qwen (no OpenAI API). Override via GROQ_MODEL:
+# https://console.groq.com/docs/models
+GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
 
 
 def _groq_chat(system: str, user: str, max_tokens: int = 1024) -> str | None:
