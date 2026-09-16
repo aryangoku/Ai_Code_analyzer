@@ -4,33 +4,79 @@ import logging
 logger = logging.getLogger(__name__)
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-# llama-3.3-70b-versatile was retired by Groq on 2026-08-16 for free/developer tiers.
-# Default stays on Groq-hosted Qwen (no OpenAI API). Override via GROQ_MODEL:
+# All of these are called via the Groq SDK / Groq API only (no OpenAI API key).
+# Llama IDs are enterprise-only now; free/developer production chat models are
+# the gpt-oss IDs hosted by Groq. Override with GROQ_MODEL to pin one ID.
 # https://console.groq.com/docs/models
-GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
+_DEFAULT_GROQ_MODELS = (
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.8-27b",
+    "groq/compound",
+)
+
+
+def _model_candidates() -> list[str]:
+    preferred = (os.getenv("GROQ_MODEL") or "").strip()
+    models: list[str] = []
+    if preferred:
+        models.append(preferred)
+    for model in _DEFAULT_GROQ_MODELS:
+        if model not in models:
+            models.append(model)
+    return models
+
+
+_working_model: str | None = None
+
+
+def _is_model_not_found(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "model_not_found" in text or "does not exist" in text or "do not have access" in text
 
 
 def _groq_chat(system: str, user: str, max_tokens: int = 1024) -> str | None:
     """Call Groq chat completion. Returns content string or None on failure."""
+    global _working_model
     if not GROQ_API_KEY:
         return None
     try:
         from groq import Groq
-
-        client = Groq(api_key=GROQ_API_KEY)
-        resp = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            max_tokens=max_tokens,
-            temperature=0.4,
-        )
-        return resp.choices[0].message.content.strip()
     except Exception as e:
-        logger.warning("Groq API error: %s", e)
+        logger.warning("Groq SDK import failed: %s", e)
         return None
+
+    client = Groq(api_key=GROQ_API_KEY)
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
+    candidates = _model_candidates()
+    if _working_model and _working_model in candidates:
+        candidates = [_working_model] + [m for m in candidates if m != _working_model]
+
+    last_error: Exception | None = None
+    for model in candidates:
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=0.4,
+            )
+            _working_model = model
+            return resp.choices[0].message.content.strip()
+        except Exception as e:
+            last_error = e
+            if _is_model_not_found(e):
+                logger.warning("Groq model unavailable (%s): %s", model, e)
+                continue
+            logger.warning("Groq API error (%s): %s", model, e)
+            return None
+
+    if last_error:
+        logger.warning("Groq API error: all candidate models failed: %s", last_error)
+    return None
 
 
 def architecture_review(code_sample: str, repo_name: str, language: str) -> dict:
