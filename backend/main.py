@@ -37,12 +37,12 @@ def _normalize_github_url(url: str) -> str:
     return url
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {"app": "CodePulse", "docs": "/docs", "health": "/health"}
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health():
     return {"status": "ok"}
 
