@@ -4,7 +4,7 @@ AI-powered code analyzer for GitHub repositories. Paste a repo URL to get health
 
 ## Stack
 
-- **Backend:** FastAPI, Python (Radon, Bandit, GitPython, optional OpenAI, JWT auth)
+- **Backend:** FastAPI, Python (Radon, Bandit, GitPython, optional Groq AI, JWT auth)
 - **Frontend:** React, Tailwind CSS, Recharts, Framer Motion
 
 ## Quick start
@@ -38,7 +38,8 @@ App: `http://localhost:3000`.
 
 | Variable | Where | Purpose |
 |----------|--------|---------|
-| `OPENAI_API_KEY` | backend | Enables AI architecture review panel |
+| `GROQ_API_KEY` | backend | Enables AI architecture review panel (Groq) |
+| `GROQ_MODEL` | backend | Groq model ID (default: `openai/gpt-oss-120b`) |
 | `GITHUB_TOKEN` | backend | Higher GitHub API rate limits (commit activity, contributors) |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | backend | GitHub OAuth (Login with GitHub) |
 | `FRONTEND_URL` | backend | Where to redirect after OAuth (default: `http://localhost:3000`) |
@@ -53,8 +54,8 @@ App: `http://localhost:3000`.
 - **Contributor graph** – Top contributors with avatars and commit counts
 - **Engineering health score** – Overall, complexity, risk, security, and activity scores
 - **Dependency graph** – Python import graph (nodes and edges)
-- **AI architecture review panel** – Repo-specific OpenAI review when `OPENAI_API_KEY` is set (unique per repository)
-- **AI recommendation** – Repo-specific suggestions (with or without OpenAI)
+- **AI architecture review panel** – Repo-specific Groq review when `GROQ_API_KEY` is set (unique per repository)
+- **AI recommendation** – Repo-specific suggestions (with or without Groq)
 - **Health score** – From cyclomatic complexity
 - **Risk score** – From complexity, issues, and large files
 - **Security report** – Bandit output (expandable)
