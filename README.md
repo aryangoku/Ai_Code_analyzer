@@ -39,7 +39,7 @@ App: `http://localhost:3000`.
 | Variable | Where | Purpose |
 |----------|--------|---------|
 | `GROQ_API_KEY` | backend | Enables AI architecture review panel (Groq) |
-| `GROQ_MODEL` | backend | Groq model ID (default: `qwen/qwen3.6-27b`) |
+| `GROQ_MODEL` | backend | Optional Groq model ID override (default tries `openai/gpt-oss-120b`, then other Groq-hosted models) |
 | `GITHUB_TOKEN` | backend | Higher GitHub API rate limits (commit activity, contributors) |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | backend | GitHub OAuth (Login with GitHub) |
 | `FRONTEND_URL` | backend | Where to redirect after OAuth (default: `http://localhost:3000`) |
